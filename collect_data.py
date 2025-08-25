@@ -2,75 +2,51 @@ import cv2
 import mediapipe as mp
 import numpy as np
 import os
-import json
 
-# Initialize MediaPipe Hands
 mp_hands = mp.solutions.hands
-hands = mp_hands.Hands(max_num_hands=1)
+hands = mp_hands.Hands(static_image_mode=False)
 mp_draw = mp.solutions.drawing_utils
 
-# Folder to save collected data
-DATA_DIR = "data"
-os.makedirs(DATA_DIR, exist_ok=True)
+labels = ["A", "B", "C", "D", "E"]
+output_folder = "dataset"
 
-# Load existing dataset or create new
-data_file = os.path.join(DATA_DIR, "data.json")
-if os.path.exists(data_file):
-    with open(data_file, "r") as f:
-        dataset = json.load(f)
-else:
-    dataset = {"landmarks": [], "labels": []}
+for label in labels:
+    os.makedirs(f"{output_folder}/{label}", exist_ok=True)
 
 cap = cv2.VideoCapture(0)
-print("Press 'q' to quit.")
-print("Press 's' to save current frame's landmarks with label.")
-
-label = input("Enter label for the gesture you want to collect data for: ").strip()
+current_label = "A"
+count = 0
 
 while True:
     ret, frame = cap.read()
     if not ret:
-        print("Failed to grab frame")
         break
 
     frame = cv2.flip(frame, 1)
-    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    results = hands.process(rgb_frame)
+    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    result = hands.process(rgb)
 
-    if results.multi_hand_landmarks:
-        for hand_landmarks in results.multi_hand_landmarks:
-            mp_draw.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
-
+    if result.multi_hand_landmarks:
+        for handLms in result.multi_hand_landmarks:
+            mp_draw.draw_landmarks(frame, handLms, mp_hands.HAND_CONNECTIONS)
             landmarks = []
-            for lm in hand_landmarks.landmark:
+            for lm in handLms.landmark:
                 landmarks.append(lm.x)
                 landmarks.append(lm.y)
 
-            cv2.putText(frame, "Press 's' to save this gesture", (10, 40),
-                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+            np.save(f"{output_folder}/{current_label}/{count}.npy", np.array(landmarks))
+            count += 1
 
-    else:
-        cv2.putText(frame, "Show your hand clearly", (10, 40),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+    cv2.putText(frame, f"Collecting: {current_label} ({count})", (10, 30),
+                cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+    cv2.imshow("Collecting Data", frame)
 
-    cv2.imshow("Collect ISL Data", frame)
-    key = cv2.waitKey(1) & 0xFF
-
-    if key == ord('q'):
+    key = cv2.waitKey(1)
+    if key == ord('n'):
+        current_label = input("Enter next label: ").upper()
+        count = 0
+    elif key == 27:
         break
-    elif key == ord('s'):
-        if results.multi_hand_landmarks:
-            dataset["landmarks"].append(landmarks)
-            dataset["labels"].append(label)
-            print(f"Saved data point for label '{label}'. Total samples: {len(dataset['labels'])}")
-        else:
-            print("No hand detected, cannot save")
-
-# Save collected data to disk
-with open(data_file, "w") as f:
-    json.dump(dataset, f)
-
-print(f"Data saved to {data_file}")
 
 cap.release()
 cv2.destroyAllWindows()
